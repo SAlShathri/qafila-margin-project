@@ -36,8 +36,37 @@ def ingest(data_dir: Path, db: Path) -> None:
     """
     with duckdb.connect(str(db)) as con:  # closes the file before dbt opens it
         con.sql("CREATE SCHEMA IF NOT EXISTS raw")
-        raise NotImplementedError("Step 1: load the sources into the raw schema")
 
+        # --- A. App database (SQLite) ---------------------------------------
+        # Attach the SQLite file read-only so DuckDB can query it directly.
+        src = data_dir / "qafila_oltp.sqlite"
+        con.sql(f"ATTACH '{src.as_posix()}' AS src (TYPE sqlite, READ_ONLY)")
+
+        # Copy each table as-is. CREATE OR REPLACE makes re-runs idempotent:
+        # the table is rebuilt, never appended to.
+        for table in ["orders", "order_items", "products", "stores"]:
+            con.sql(f"CREATE OR REPLACE TABLE raw.{table} AS SELECT * FROM src.{table}")
+
+        con.sql("DETACH src")
+
+        # --- B. Supplier price files ----------------------------------------
+        # One glob picks up every weekly file, including the late _fix file
+        # when it appears. No file names are hard-coded.
+        pattern = (data_dir / "suppliers" / "prices_*.csv").as_posix()
+
+        con.sql(f"""
+            CREATE OR REPLACE TABLE raw.supplier_prices AS
+            SELECT
+                *,
+                parse_filename(filename) AS source_file   -- e.g. prices_2026-W39.csv
+            FROM read_csv(
+                '{pattern}',
+                all_varchar   = true,   -- keep every value as text: '9,49' and Arabic digits survive untouched
+                union_by_name = true,   -- align columns by name: W39 renamed unit_cost to cost_sar and reordered
+                filename      = true,   -- adds the full path of each row's file
+                header        = true
+            )
+        """)
 
 def transform(db: Path) -> None:
     """Steps 2-4: build and test the dbt project in dbt/ against the DuckDB file.
