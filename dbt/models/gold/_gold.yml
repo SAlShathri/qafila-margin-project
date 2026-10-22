@@ -1,0 +1,9 @@
+version: 2
+models:
+  - name: weekly_margin
+    description: "Gross margin. Grain: one row per iso_week x city x category with at least one counted line."
+    columns:
+      - name: iso_week
+        data_tests: [not_null]
+      - name: city
+        data_tests: [not_null]

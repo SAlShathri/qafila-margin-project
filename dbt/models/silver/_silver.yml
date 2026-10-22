@@ -1,0 +1,11 @@
+version: 2
+models:
+  - name: product_cost_history
+    description: "SCD2 supplier costs. Grain: one row per SKU per cost version."
+    columns:
+      - name: sku
+        data_tests: [not_null]
+      - name: unit_cost_sar
+        data_tests: [not_null]
+      - name: valid_from
+        data_tests: [not_null]
