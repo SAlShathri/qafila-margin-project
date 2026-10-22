@@ -89,8 +89,19 @@ def publish(db: Path, warehouse: Path) -> None:
     how we see what a number was before the supplier's correction arrived.
     """
     catalog = get_catalog(warehouse)
-    raise NotImplementedError("Step 5: publish the models to Iceberg")
+    tables = ["silver.product_cost_history", "gold.weekly_margin", "quality.price_quarantine"]
 
+    with duckdb.connect(str(db), read_only=True) as con:
+        for name in tables:
+            namespace = name.split(".")[0]
+            data = con.sql(f"SELECT * FROM {name}").to_arrow_table()   # same schema.table in DuckDB
+
+            catalog.create_namespace_if_not_exists(namespace)
+            # First run: create the table from the data's schema. Later runs: reuse it.
+            table = catalog.create_table_if_not_exists(name, schema=data.schema)
+            # Replace the contents as a new snapshot; older snapshots stay readable.
+            table.overwrite(data)
+            print(f"published {name}: {data.num_rows} rows, {len(table.snapshots())} snapshot(s)")
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
